@@ -18,9 +18,14 @@ module load "$(awk -F'\t' '$1=="mpi_module"{print $2}' "$BUILD/BUILD_INFO")"
 OUT=$PWD/bench/$ID; rm -rf "$OUT"; mkdir -p "$OUT"; cd "$OUT"
 cp "$DATA" data.phy
 cp "$BUILD/BUILD_INFO" .
-# the alignment path is the first line of the .param that names an existing file: point it to the copy
-awk -v new="$OUT/data.phy" -v old="$DATA" 'BEGIN{done=0} {if (!done && $0==old) {print new; done=1} else print}' "$PARAM" > chain.param
-grep -q -x "$OUT/data.phy" chain.param || { echo "could not find the alignment path $DATA in $PARAM"; exit 1; }
+# among the first lines of the .param, the one naming an existing file is the alignment: point it to the copy
+LN=""
+for i in $(seq 1 20); do
+  l=$(sed -n "${i}p" "$PARAM")
+  case "$l" in */*) [ -f "$l" ] && { LN=$i; break; } ;; esac
+done
+[ -n "$LN" ] || { echo "could not find the alignment path in $PARAM"; exit 1; }
+awk -v ln="$LN" -v new="$OUT/data.phy" 'NR==ln {print new; next} {print}' "$PARAM" > chain.param
 SIZE=$(sed -n 2p chain.param | cut -f3)
 UNTIL=$((SIZE + NCYCLES))
 echo "host=$(hostname) ranks=$SLURM_NTASKS resume at $SIZE points, run until $UNTIL"
