@@ -12,7 +12,7 @@
 set -uo pipefail
 # name | number of cycles | data (in bench/data) | pb_mpi model flags
 AA=sim40x5000.phy     # sbatch scripts/bench/make_testdata.sbatch
-CODON=codon20x300.phy # sbatch scripts/bench/make_testdata.sbatch 20 300 1 GY codon
+CODON=codon20x1500.phy # sbatch scripts/bench/make_testdata.sbatch 20 1500 1 GY codon   (1500 nt = 500 codons)
 MODELS=(
   "catgtr|20|$AA|-cat -gtr"
   "catpoisson|60|$AA|-cat -poisson"

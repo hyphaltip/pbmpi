@@ -6,7 +6,7 @@
 #
 # usage (from repo root):  sbatch scripts/bench/make_testdata.sbatch [NTAXA] [NSITES] [SEED] [MODEL] [PREFIX]
 #   MODEL  : IQ-TREE model to simulate under (default LG+C20+G4; e.g. GY for a codon alignment,
-#            in which case NSITES is a number of codons)
+#            NSITES is then in nucleotides)
 #   PREFIX : output name prefix (default sim)
 # output: bench/data/<PREFIX><NTAXA>x<NSITES>.phy  (bench/ is git-ignored, safe to delete)
 set -euo pipefail

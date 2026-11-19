@@ -48,6 +48,7 @@ echo "host=$(hostname) cpu=$(lscpu | sed -n 's/Model name: *//p') ntasks=$SLURM_
 START=$(date +%s.%N)
 mpirun -np "$SLURM_NTASKS" $RUN > run.log 2>&1 || { tail -30 run.log; exit 1; }
 END=$(date +%s.%N)
+ls mpistats.*.txt > /dev/null 2>&1 && { echo "== per-message statistics, rank 1 (EXTRA_CPPFLAGS=-DPB_MPI_STATS)"; sort -t$'\t' -k4,4gr mpistats.1.txt | head -14; }
 echo "$REF $ID ncycles=$NCYCLES wall_s=$(echo "$END - $START" | bc)" | tee walltime.txt
 tail -3 chain.trace
 if [ "$PERF" = 1 ]; then
