@@ -11,5 +11,5 @@ NTAXA=${1:-40}; NSITES=${2:-5000}; SEED=${3:-1}
 module load iqtree/2.2.2.6
 mkdir -p bench/data
 OUT=bench/data/sim${NTAXA}x${NSITES}
-iqtree2 --alisim $OUT -m LG+C20+G4 -t "RANDOM{yh/$NTAXA}" --length $NSITES --seed $SEED --out-format phylip -nt 2
+iqtree2 --alisim $OUT -m LG+C20+G4 -t "RANDOM{yh/$NTAXA}" --length $NSITES --seed $SEED -nt 2
 ls -l $OUT*
