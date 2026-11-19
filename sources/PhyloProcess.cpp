@@ -478,9 +478,7 @@ double PhyloProcess::BranchLengthMove(double tuning)	{
 
 	// uses condlmap[0] as auxiliary variable
 	int n = 0;
-	BeginBatch();
 	double total = RecursiveBranchLengthMove(GetRoot(),tuning,n);
-	EndBatch();
 	return total / n;
 }
 
@@ -1410,16 +1408,9 @@ double PhyloProcess::GlobalComputeNodeLikelihood(const Link* from, int auxindex)
 	assert(myid == 0);
 	MESSAGE signal = LIKELIHOOD;
 	MPI_Status stat;
+	MPI_Bcast(&signal,1,MPI_INT,0,MPI_COMM_WORLD);
 	int i,args[] = {GetLinkIndex(from),auxindex};
-	if (batching)	{
-		// the likelihood request is sent together with the commands queued so far
-		QueueCommand(LIKELIHOOD,args[0],args[1],0,0);
-		FlushBatch();
-	}
-	else	{
-		MPI_Bcast(&signal,1,MPI_INT,0,MPI_COMM_WORLD);
-		MPI_Bcast(args,2,MPI_INT,0,MPI_COMM_WORLD);
-	}
+	MPI_Bcast(args,2,MPI_INT,0,MPI_COMM_WORLD);
 	// master : sums up all values sent by slaves
 	// store this sum into member variable logL
 	// and return it
@@ -1440,10 +1431,6 @@ void PhyloProcess::GlobalReset(const Link* link, bool condalloc)	{
 	// slaves: upon receiving message
 	// call the Reset function with link corresponding to index received as argument of the message
 	assert(myid == 0);
-	if (batching)	{
-		QueueCommand(RESET,GetLinkIndex(link),(condalloc) ? 1 : 0,0,0);
-		return;
-	}
 	MESSAGE signal = RESET;
 	int args[2];
 	MPI_Bcast(&signal,1,MPI_INT,0,MPI_COMM_WORLD);
@@ -1460,10 +1447,6 @@ void PhyloProcess::GlobalMultiply(const Link* from, const Link* to, bool condall
 	// slaves: upon receiving message
 	// call the Multiply function with links corresponding to the two indices received as argument
 	assert(myid == 0);
-	if (batching)	{
-		QueueCommand(MULTIPLY,GetLinkIndex(from),GetLinkIndex(to),(condalloc) ? 1 : 0,0);
-		return;
-	}
 	MESSAGE signal = MULTIPLY;
 	int args[3];
 	MPI_Bcast(&signal,1,MPI_INT,0,MPI_COMM_WORLD);
@@ -1489,10 +1472,6 @@ void PhyloProcess::GlobalInitialize(const Link* from, const Link* link, bool con
 
 	// MPI
 	assert(myid == 0);
-	if (batching)	{
-		QueueCommand(INITIALIZE,GetLinkIndex(from),GetLinkIndex(link),(condalloc) ? 1 : 0,0);
-		return;
-	}
 	MESSAGE signal = INITIALIZE;
 	int args[3];
 	MPI_Bcast(&signal,1,MPI_INT,0,MPI_COMM_WORLD);
@@ -1507,10 +1486,6 @@ void PhyloProcess::GlobalPropagate(const Link* from, const Link* to, double time
 
 	// MPI
 	assert(myid == 0);
-	if (batching)	{
-		QueueCommand(PROPAGATE,GetLinkIndex(from),GetLinkIndex(to),(condalloc) ? 1 : 0,time);
-		return;
-	}
 	MESSAGE signal = PROPAGATE;
 	MPI_Bcast(&signal,1,MPI_INT,0,MPI_COMM_WORLD);
     int args[3];
@@ -1528,17 +1503,12 @@ double PhyloProcess::GlobalProposeMove(const Branch* branch, double tuning)	{
 	// should send a message with arguments: GetBranchIndex(branch), m
 	// slaves should interpret the message, and apply on branch with index received as message argument
 	assert(myid == 0);
+	MESSAGE signal = PROPOSE;
+	MPI_Bcast(&signal,1,MPI_INT,0,MPI_COMM_WORLD);
 	double m = tuning * (rnd::GetRandom().Uniform() - 0.5);
 	int index = branch->GetIndex();
-	if (batching)	{
-		QueueCommand(PROPOSE,index,0,0,m);
-	}
-	else	{
-		MESSAGE signal = PROPOSE;
-		MPI_Bcast(&signal,1,MPI_INT,0,MPI_COMM_WORLD);
-		MPI_Bcast(&index,1,MPI_INT,0,MPI_COMM_WORLD);
-		MPI_Bcast(&m,1,MPI_DOUBLE,0,MPI_COMM_WORLD);
-	}
+	MPI_Bcast(&index,1,MPI_INT,0,MPI_COMM_WORLD);
+	MPI_Bcast(&m,1,MPI_DOUBLE,0,MPI_COMM_WORLD);
 	MoveBranch(branch,m);
 	return m;
 }
@@ -1548,15 +1518,10 @@ void PhyloProcess::GlobalRestore(const Branch* branch)	{
 	// MPI
 	// master and all slaves should all call RestoreBranch(branch)
 	assert(myid == 0);
+	MESSAGE signal = RESTORE;
+	MPI_Bcast(&signal,1,MPI_INT,0,MPI_COMM_WORLD);
 	int n = branch->GetIndex();
-	if (batching)	{
-		QueueCommand(RESTORE,n,0,0,0);
-	}
-	else	{
-		MESSAGE signal = RESTORE;
-		MPI_Bcast(&signal,1,MPI_INT,0,MPI_COMM_WORLD);
-		MPI_Bcast(&n,1,MPI_INT,0,MPI_COMM_WORLD);
-	}
+	MPI_Bcast(&n,1,MPI_INT,0,MPI_COMM_WORLD);
 	Restore(branch);
 }
 
@@ -1570,61 +1535,6 @@ void PhyloProcess::GlobalUpdateConditionalLikelihoods()	{
 
 	GlobalComputeNodeLikelihood(GetRoot(),0);
 	// GlobalCheckLikelihood();
-}
-
-// master: send all queued commands as one message
-void PhyloProcess::FlushBatch()	{
-	assert(myid == 0);
-	if (batchqueue.empty())	{
-		return;
-	}
-	int header[2];
-	header[0] = BATCH;
-	header[1] = batchqueue.size();
-	// same first message size (1 int) as for all other signals: the number of commands follows
-	MPI_Bcast(header,1,MPI_INT,0,MPI_COMM_WORLD);
-	MPI_Bcast(header+1,1,MPI_INT,0,MPI_COMM_WORLD);
-	MPI_Bcast(&batchqueue[0],batchqueue.size()*sizeof(BatchCommand),MPI_BYTE,0,MPI_COMM_WORLD);
-	batchqueue.clear();
-}
-
-// slave: receive a batch of commands, and execute them in order
-void PhyloProcess::SlaveExecuteBatch()	{
-	assert(myid > 0);
-	int n;
-	MPI_Bcast(&n,1,MPI_INT,0,MPI_COMM_WORLD);
-	batchqueue.resize(n);
-	MPI_Bcast(&batchqueue[0],n*sizeof(BatchCommand),MPI_BYTE,0,MPI_COMM_WORLD);
-	for (int i=0; i<n; i++)	{
-		const BatchCommand& c = batchqueue[i];
-		switch(c.signal)	{
-		case RESET:
-			SlaveReset(c.arg[0],c.arg[1] == 1);
-			break;
-		case MULTIPLY:
-			SlaveMultiply(c.arg[0],c.arg[1],c.arg[2] == 1);
-			break;
-		case INITIALIZE:
-			SlaveInitialize(c.arg[0],c.arg[1],c.arg[2] == 1);
-			break;
-		case PROPAGATE:
-			SlavePropagate(c.arg[0],c.arg[1],c.arg[2] == 1,c.x);
-			break;
-		case PROPOSE:
-			SlavePropose(c.arg[0],c.x);
-			break;
-		case RESTORE:
-			SlaveRestore(c.arg[0]);
-			break;
-		case LIKELIHOOD:
-			SlaveLikelihood(c.arg[0],c.arg[1]);
-			break;
-		default:
-			cerr << "error in PhyloProcess::SlaveExecuteBatch: unexpected command " << c.signal << "\n";
-			exit(1);
-		}
-	}
-	batchqueue.clear();
 }
 
 void PhyloProcess::GlobalPartialUpdateConditionalLikelihoods(const Link* target)	{
@@ -1920,9 +1830,6 @@ void PhyloProcess::SlaveExecute(MESSAGE signal)	{
 		break;
 	case 	UPDATE:
 		UpdateConditionalLikelihoods();
-		break;
-	case 	BATCH:
-		SlaveExecuteBatch();
 		break;
 	case 	UPDATE_PARTIAL:
 		MPI_Bcast(&n,1,MPI_INT,0,MPI_COMM_WORLD);
