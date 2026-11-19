@@ -25,15 +25,15 @@ cat > "$OUT/fixusec.c" <<'EOC'
 #define _GNU_SOURCE
 #include <sys/time.h>
 #include <dlfcn.h>
-int gettimeofday(struct timeval* tv, void* tz) {
-    static int (*real)(struct timeval*, void*) = 0;
-    if (!real) real = (int (*)(struct timeval*, void*)) dlsym(RTLD_NEXT, "gettimeofday");
+int gettimeofday(struct timeval* restrict tv, struct timezone* restrict tz) {
+    static int (*real)(struct timeval*, struct timezone*) = 0;
+    if (!real) real = (int (*)(struct timeval*, struct timezone*)) dlsym(RTLD_NEXT, "gettimeofday");
     int r = real(tv, tz);
     if (tv) tv->tv_usec = 424242;
     return r;
 }
 EOC
-gcc -O2 -shared -fPIC -o "$OUT/fixusec.so" "$OUT/fixusec.c" -ldl || exit 1
+gcc -std=gnu99 -O2 -shared -fPIC -o "$OUT/fixusec.so" "$OUT/fixusec.c" -ldl || exit 1
 DATA=$ROOT/bench/data/sim40x5000.phy
 rc=0
 run_model() {   # name, pb_mpi flags, then readpb analyses (one string each)
