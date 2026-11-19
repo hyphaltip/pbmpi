@@ -436,6 +436,37 @@ class PhyloProcess : public virtual SubstitutionProcess, public virtual BranchPr
     void GlobalResetAllConditionalLikelihoods();
     void SlaveResetAllConditionalLikelihoods();
 
+	// Batching of elementary commands (used by the branch length move):
+	// between BeginBatch() and EndBatch(), the elementary commands that do not require an answer
+	// from the slaves (reset, multiply, initialize, propagate, propose, restore) are not sent one by one.
+	// They are queued, and sent as one single message when an answer is needed (likelihood) or at EndBatch().
+	// Slaves execute the queued commands in the same order, so that the computations are unchanged.
+	struct BatchCommand	{
+		int signal;
+		int arg[3];
+		double x;
+	};
+	void BeginBatch()	{
+		batching = true;
+	}
+	void EndBatch()	{
+		FlushBatch();
+		batching = false;
+	}
+	void QueueCommand(MESSAGE signal, int arg0, int arg1, int arg2, double x)	{
+		BatchCommand c;
+		c.signal = signal;
+		c.arg[0] = arg0;
+		c.arg[1] = arg1;
+		c.arg[2] = arg2;
+		c.x = x;
+		batchqueue.push_back(c);
+	}
+	void FlushBatch();
+	void SlaveExecuteBatch();
+	bool batching = false;
+	vector<BatchCommand> batchqueue;
+
 	void GlobalReset(const Link* from, bool condalloc = false);
 	void GlobalMultiply(const Link* from, const Link* to, bool condalloc = false);
 	void GlobalMultiplyByStationaries(const Link* from, bool condalloc = false);
