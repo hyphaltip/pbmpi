@@ -8,8 +8,10 @@
 #   scripts/bench/regression.sh check                         # after the jobs have finished
 #
 # ONLY=<regex> restricts both commands to the models whose name matches.
-# Outputs go to bench/reg_<model>_{old,new}/ (git-ignored, safe to delete).
+# PREFIX=<name> (default reg) names the output folders, so that two regressions can run side by side.
+# Outputs go to bench/<PREFIX>_<model>_{old,new}/ (git-ignored, safe to delete).
 set -uo pipefail
+PREFIX=${PREFIX:-reg}
 # name | number of cycles | data (in bench/data) | pb_mpi model flags
 AA=sim40x5000.phy     # sbatch scripts/bench/make_testdata.sbatch
 AASMALL=sim20x1000.phy # sbatch scripts/bench/make_testdata.sbatch 20 1000
@@ -36,8 +38,8 @@ submit)
   for m in "${MODELS[@]}"; do
     IFS='|' read -r name n data flags <<< "$m"
     [ -n "${ONLY:-}" ] && [[ ! "$name" =~ $ONLY ]] && continue
-    sbatch --parsable -J pb_reg scripts/bench/bench.sbatch "$OLD" "reg_${name}_old" "$n" 0 "bench/data/$data" $flags
-    sbatch --parsable -J pb_reg scripts/bench/bench.sbatch "$NEW" "reg_${name}_new" "$n" 0 "bench/data/$data" $flags
+    sbatch --parsable -J pb_reg scripts/bench/bench.sbatch "$OLD" "${PREFIX}_${name}_old" "$n" 0 "bench/data/$data" $flags
+    sbatch --parsable -J pb_reg scripts/bench/bench.sbatch "$NEW" "${PREFIX}_${name}_new" "$n" 0 "bench/data/$data" $flags
   done ;;
 check)
   rc=0
@@ -45,10 +47,10 @@ check)
     IFS='|' read -r name n data flags <<< "$m"
     [ -n "${ONLY:-}" ] && [[ ! "$name" =~ $ONLY ]] && continue
     echo "== $name ($flags, $n cycles)"
-    if [ ! -f "bench/reg_${name}_old/walltime.txt" ] || [ ! -f "bench/reg_${name}_new/walltime.txt" ]; then
+    if [ ! -f "bench/${PREFIX}_${name}_old/walltime.txt" ] || [ ! -f "bench/${PREFIX}_${name}_new/walltime.txt" ]; then
       echo "MISSING (job failed or still running)"; rc=1; continue
     fi
-    scripts/bench/compare_runs.sh "bench/reg_${name}_old" "bench/reg_${name}_new" || rc=1
+    scripts/bench/compare_runs.sh "bench/${PREFIX}_${name}_old" "bench/${PREFIX}_${name}_new" || rc=1
   done
   [ $rc = 0 ] && echo "ALL IDENTICAL" || echo "SOME RUNS DIFFER OR ARE MISSING"
   exit $rc ;;
