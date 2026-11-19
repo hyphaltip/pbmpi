@@ -1,6 +1,7 @@
 #!/usr/bin/bash -l
-#SBATCH -p short -N 1 -n 8 --mem 16G --time 1:00:00 -J pb_bench -o bench/logs/bench.%j.log
+#SBATCH -p short -C milan -N 1 -n 8 --mem 16G --time 1:00:00 -J pb_bench -o bench/logs/bench.%j.log
 # Build pb_mpi from a given git ref and run a short fixed-seed chain, recording
+# (All runs are pinned to the same CPU type, "milan" EPYC nodes, so timings compare.)
 # wall time and (optionally) a perf profile. Everything lands in
 # bench/<ID>/ which is git-ignored and safe to delete.
 #
