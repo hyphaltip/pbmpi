@@ -14,6 +14,8 @@
 #     DATA     alignment (default bench/data/sim40x5000.phy)
 #     MODEL    pb_mpi model flags (default: -cat -gtr)
 #   env: EXTRA_CPPFLAGS / MAKE_CPPFLAGS to change compiler flags.
+#        MPIRUN_OPTS: extra mpirun options, e.g. "--bind-to core --map-by core" to pin each rank
+#        to one core (then submit with sbatch --hint=nomultithread so that whole cores are allocated).
 #
 # The chain uses `-rnd 1`, so two builds that perform the same arithmetic give
 # identical .trace/.treelist files; compare with scripts/bench/compare_runs.sh.
@@ -46,7 +48,7 @@ EOW
 fi
 echo "host=$(hostname) cpu=$(lscpu | sed -n 's/Model name: *//p') ntasks=$SLURM_NTASKS"
 START=$(date +%s.%N)
-mpirun -np "$SLURM_NTASKS" $RUN > run.log 2>&1 || { tail -30 run.log; exit 1; }
+mpirun ${MPIRUN_OPTS:-} -np "$SLURM_NTASKS" $RUN > run.log 2>&1 || { tail -30 run.log; exit 1; }
 END=$(date +%s.%N)
 ls mpistats.*.txt > /dev/null 2>&1 && { echo "== per-message statistics, rank 1 (EXTRA_CPPFLAGS=-DPB_MPI_STATS)"; sort -t$'\t' -k4,4gr mpistats.1.txt | head -14; }
 echo "$REF $ID ncycles=$NCYCLES wall_s=$(echo "$END - $START" | bc)" | tee walltime.txt
