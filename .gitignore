@@ -2,3 +2,4 @@
 *.d
 data/
 /bench/
+/builds/
