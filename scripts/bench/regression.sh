@@ -12,6 +12,7 @@
 set -uo pipefail
 # name | number of cycles | data (in bench/data) | pb_mpi model flags
 AA=sim40x5000.phy     # sbatch scripts/bench/make_testdata.sbatch
+AASMALL=sim20x1000.phy # sbatch scripts/bench/make_testdata.sbatch 20 1000
 CODON=codon20x1500.phy # sbatch scripts/bench/make_testdata.sbatch 20 1500 1 GY codon   (1500 nt = 500 codons)
 MODELS=(
   "catgtr|20|$AA|-cat -gtr"
@@ -21,7 +22,7 @@ MODELS=(
   "lg|15|$AA|-ncat 1 -lg"
   "catgtr_nni|10|$AA|-cat -gtr -spr 2 -nni 2"
   "catpoisson_dc|30|$AA|-cat -poisson -dc"
-  "stepping_catgtr|1000|$AA|-cat -gtr -sis 1000 2 3"
+  "stepping_catgtr|1000|$AASMALL|-cat -gtr -sis 1000 2 3"
   "stepping_catpoisson|1000|$AA|-cat -poisson -sis 1000 2 3"
   "mutsel_cat|8|$CODON|-mutsel -cat"
   "mutsel_ncat3|8|$CODON|-mutsel -ncat 3"
