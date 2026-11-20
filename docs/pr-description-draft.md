@@ -35,7 +35,7 @@ Each change keeps the same arithmetic in the same order and the same sequence of
 
 ## How it was tested
 
-- `scripts/bench/regression.sh`: 14 model configurations against `master`, same seed and rank count. 13 give identical chains. The 14th (`-cat -gtr -sis`) cannot be compared because `master` aborts with NaN.
+- `scripts/bench/regression.sh`: 14 model configurations against `master`, same seed and rank count. 13 give identical chains. The 14th (`-cat -gtr -sis`) cannot be compared against the current `master`, because `master` aborts with NaN. It is compared after the small fix described below.
 - `scripts/bench/readpb_regression.sbatch`: `readpb_mpi` analyses against `master` (30 analyses, all identical for an earlier candidate; to be re-run on the final commit, see below).
 - A production-size resumed chain: first 8 cycles identical.
 - Compiler flags: `-mavx2` does not change the chain of `master` or of the optimized code.
@@ -43,7 +43,7 @@ Each change keeps the same arithmetic in the same order and the same sequence of
 ## Known gaps (please read)
 
 - Validated only with the same number of ranks for both builds, on GCC 8.5.0, Open MPI 4.1.2, AMD EPYC 7713.
-- Stepping-stone with CAT-GTR is not validated (`master` aborts).
+- Stepping-stone with CAT-GTR: `master` aborts. The cause is an uninitialized array (see `docs/validation.md`, section 3.4). The fix is an independent 8-line change in `sources/GTRProfileProcess.cpp`. **Submit it as a separate small pull request to `master` first.** With the fix, the optimized code gives the same `.stepping` file as the fixed `master` for one stepping point on a 20x1000 alignment. The `logZ` and `effsize` columns print `-nan` for large steps, in `master` too (not fixed).
 - One model, `-mutsel -ncat 3`, was slower than `master` in a single short unpinned run (0.83x). Not yet repeated.
 - Most timings are single unpinned runs with 6% to 21% run-to-run spread. See `docs/PERFORMANCE.md`, section 4.
 - The vector kernel uses GCC and clang vector extensions. Other compilers use the plain loops. Not tested on ARM or with clang.

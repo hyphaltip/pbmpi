@@ -60,13 +60,13 @@ Test conditions: 8 MPI ranks, unpinned, default compiler flags (`-Wall -O3 -std=
 | `-mutsel -cat -freeomega` | 8 | yes | 72.7 | 62.1 | 1.17x |
 | `-mutselc -cat` | 8 | yes | 309.1 | 147.0 | 2.10x |
 | `-mutselc -ncat 3` | 8 | yes | 56.8 | 41.6 | 1.36x |
-| `-cat -gtr -sis 1000 2 3` | 1000 | **cannot be compared** | master aborts | not compared | n/a |
+| `-cat -gtr -sis 1000 2 3` (20 taxa x 1000 sites; one stepping point) | 1000 | **only after the fix of section 3.4** | master aborts | see section 3.4 | n/a |
 
-I re-ran `compare_runs.sh` on these stored runs while writing this note. All 13 comparable pairs report identical files.
+I re-ran `compare_runs.sh` on these stored runs while writing this note. All 13 pairs that could be compared at that time report identical files. The 14th configuration is covered in section 3.4.
 
 Remarks:
 
-- **Stepping-stone with CAT-GTR.** `master` itself aborts with `in Plink::SetRelativeTime: setting to nan`. It does so on the 40x5000 alignment and on a 20x1000 alignment. No comparison is possible. This is a bug in `master`, not in the optimized code. The cause was not investigated. As a result, the optimized code is not validated for stepping-stone with CAT-GTR.
+- **Stepping-stone with CAT-GTR.** `master` itself aborts with `in Plink::SetRelativeTime: setting to nan` (on the 40x5000 alignment and on a 20x1000 alignment). This was a bug in `master`, not in the optimized code. It is fixed on branch `fix-sis-gtr-nan` and in `perf-opt` (commit 9f2a6fc). Section 3.4 gives the cause and the validation. The 312c2bd rows in this table were measured before the fix.
 - **`-mutsel -ncat 3`.** One run was slower than `master` (56.1 s against 67.2 s). The runs are short (8 cycles), unpinned and not repeated. Run-to-run spread at this length is 10% or more. It is not known whether this model is truly slower. Repeat it before drawing a conclusion.
 - The wall-time ratios are single unpinned runs. Use `PERFORMANCE.md` for timing, not this table.
 
@@ -99,12 +99,28 @@ For 312c2bd (CAT-GTR, 40x5000, 8 ranks, 20 cycles, compared with `compare_runs.s
 
 For earlier candidates (commit 51fdf5f and the later-superseded commit 22ccd4d), runs with `-mavx2 -mno-avx256-split-unaligned-load -mno-avx256-split-unaligned-store` and with `-mavx2 -mtune=znver1` also gave chains identical to the default-flag chain. Those flag variants were not re-run on 312c2bd.
 
+### 3.4 Stepping-stone with CAT-GTR (`-sis`): the abort in `master` and its fix
+
+**Cause.** `GTRProfileProcess::Create` allocated `emprralpha` and `emprrbeta` (the empirical-prior parameters of the relative rates) and never gave them values. In the runs examined they were all zero. They are read when `profilefrac != 1.0`, as `a = f + (1-f)*emprralpha` and `b = f + (1-f)*emprrbeta`. `SteppingRun` calls `GlobalSetEmpiricalFrac(frac)` at every stepping point, even when no empirical prior was loaded, and `frac` is 0 for the first point. `profilefrac` then becomes 0, `a` and `b` become 0, and `Gamma(a + count, b + beta)` gives NaN relative rates. The substitution matrix becomes NaN, path sampling stores NaN in `Plink::rel_time`, and the next write to that object aborts, because `Plink::SetRelativeTime` tests its old value. Models without relative rates to estimate (CAT-Poisson) were not affected, because their empirical-prior arrays default to 1.0.
+
+**Evidence** (instrumented scratch build of `master`, 20 taxa x 1000 sites, 8 ranks): all master-side parameters were finite before every broadcast to the slaves, up to the call where `profilefrac` first printed 0. From that call on, all 190 relative rates were NaN, and the first NaN stationary-matrix row followed immediately. The `emprralpha` and `emprrbeta` values printed as 0.
+
+**Fix.** Initialize both arrays to 1.0 (Gamma(1,1), the ordinary prior), as the Dirichlet weights, kappa and branch lengths already do. 8 lines in `sources/GTRProfileProcess.cpp`.
+
+**Validation.**
+
+- The failing case exits 0 with the fix and exited 1 without it.
+- Chains that do not use `-sis` never read these arrays (`profilefrac` is 1.0). Fixed `master` against unfixed `master`: `catgtr` (20 cycles) and `ncat10gtr` (15 cycles) identical in `.treelist`, `.chain` and `.trace`; `stepping_catpoisson` identical in `.stepping`.
+- Fixed `perf-opt` against fixed `master`: `catgtr`, `ncat10gtr`, `stepping_catpoisson` and `stepping_catgtr` all identical (`.stepping` for the stepping models). The `stepping_catgtr` run is one stepping point, 0 to 1000 sites, on `sim20x1000`.
+
+**Known remaining issue (not caused by the fix, not fixed).** The `logZ` and `effsize` columns of `.stepping` print `-nan` when the first step has a very negative log-likelihood. The unfixed `master` does the same for CAT-Poisson. In the accumulator, the first rescaling is `0 * exp(+large)`. The columns `meanlogp` and `varlogp` are finite. Because both sides print `-nan` in the same columns, an identical `.stepping` file shows that `meanlogp` and `varlogp` agree, but says nothing about `logZ`.
+
 ## 4. What is not validated
 
 Be explicit about these in any pull request:
 
 1. **Different numbers of MPI ranks.** All comparisons use the same rank count for both builds. The chain depends on the rank count (see `pinning-and-cpu-affinity.md`), so a chain from 8 ranks is not expected to equal a chain from 64 ranks, for `master` or for the optimized code. This was not tested by running different rank counts.
-2. **Stepping-stone with CAT-GTR** (`-sis`). `master` aborts; see above.
+2. **Stepping-stone with CAT-GTR** (`-sis`) is validated only for one stepping point on a 20-taxon, 1000-site alignment (section 3.4). Several stepping points, the 40x5000 alignment and the `-empstepping` option were not tested with CAT-GTR.
 3. **Models and options outside the table.** The 14 configurations do not use, for example, a fixed topology (`-T`, `-Tbl`), a non-default `-dgam`, or `-catfix`. Restarting a stopped chain from its `.param` file (`pb_mpi <name>`) is covered only by the single production-size check in section 3.2. Any option not named in the table should be treated as untested.
 4. **Large or long runs.** The longest identity comparison is 20 cycles of CAT-GTR on 40x5000 (about 8 saved cycles on the 38x59,994 data set). Rounding differences that appear only after many thousands of cycles would not be seen. The arithmetic is argued to be unchanged in `code-optimizations.md`, so none is expected.
 5. **Other compilers, other CPUs.** All tests used GCC 8.5.0 and Open MPI 4.1.2 on AMD EPYC 7713 (Zen 3). A different compiler or CPU can change floating-point results through instruction contraction or different library code. Re-run the regression after any such change.

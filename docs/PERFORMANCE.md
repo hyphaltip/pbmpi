@@ -180,5 +180,5 @@ sbatch -n <ranks> --mem <mem> scripts/bench/scaling.sbatch <build dir> <id> <ncy
 1. Re-measure the rank-scaling table with the current build.
 2. Repeat `-mutsel -ncat 3` (pinned, at least 3 runs) to find out whether it is slower than `master`.
 3. Pinned test of the compiler flags in `build-and-compiler-options.md`.
-4. `pb_mpi -cat -gtr -sis` aborts with a NaN in `master` itself. This blocks validation of stepping-stone sampling with CAT-GTR.
+4. `pb_mpi -cat -gtr -sis` aborted with a NaN in `master` itself. This is fixed (uninitialized empirical-prior arrays of the relative rates; see `validation.md`, section 3.4). The `logZ` and `effsize` columns of `.stepping` still print `-nan` for large steps, in `master` as well; this is a separate numerical problem and is not fixed.
 5. Remaining hot spots: `Multiply`, QR and diagonalization, `LogStatProb`, and idle time waiting for the master.
