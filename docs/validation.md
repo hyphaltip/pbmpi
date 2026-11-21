@@ -74,9 +74,7 @@ Remarks:
 
 ### 3.1 `readpb_mpi`
 
-For 312c2bd, the build record (`BUILD_INFO` in the pinned install) states that the `readpb_mpi` outputs were identical to `master` in the earlier readpb regression jobs. I did not re-run that job on 312c2bd.
-
-I did run `readpb_regression.sbatch` (small alignment `sim20x1000`, `master` against an earlier candidate, commit 22ccd4d, which is **not** the merged code) and found all 30 analyses identical:
+`readpb_regression.sbatch` was run on 2026-11-20 on the final sources (312c2bd plus the two stepping corrections and the four small fixes of `code-optimizations.md`, section 12) against `master`, on the small alignment `sim20x1000`. All 30 analyses gave identical output files:
 
 | Model | Analyses | Result |
 |---|---|---|
@@ -84,7 +82,7 @@ I did run `readpb_regression.sbatch` (small alignment `sim20x1000`, `master` aga
 | `-cat -poisson` | 12: the same list without `-rr` and `-siteprofilesuffstat` | identical |
 | `-ncat 10 -gtr` | 4: default, `-sitelogl`, `-ppred`, `-r` | identical |
 
-Before submitting a pull request, run `scripts/bench/readpb_regression.sbatch <ref> master` on the exact commit to be submitted and record the result here.
+An earlier run of the same job on a candidate before 312c2bd (commit 22ccd4d) had given the same result. The job was not run on 312c2bd itself.
 
 ### 3.2 A production-size check
 
@@ -134,6 +132,52 @@ The test is `-cat -gtr -sis 1000 2 3 -rnd 1` on `sim20x1000`, 8 ranks, one stepp
 - Stepping CAT-Poisson and all models without `-sis` have never shown run-to-run variation.
 
 To test again later: repeat the command above many times and compare `chain.stepping`; if a second value appears, add per-cycle output to find the first cycle that differs. Until then, treat a single differing stepping CAT-GTR run as possibly this effect, and repeat it before concluding that a code change altered the chain.
+
+### 3.6 The branches of the upstream pull requests
+
+For the upstream repository the speed changes are split into three branches, each on top of `fix-stepping-stone` (`master` plus the two stepping corrections, pull request 39):
+
+| Branch | Content (sections of `code-optimizations.md`) |
+|---|---|
+| `perf-pruning` | 1, 4, 7, 8: fewer conditional-likelihood updates in Unfold and GibbsSPR; optional message statistics |
+| `perf-kernels` | 2, 5, 6, 10: the Propagate and pruning kernels, contiguous vectors |
+| `perf-mixture` | 3, 9: cached logarithms in the allocation and weight moves |
+
+Each branch, and the merge of the three (`perf-combined`), was built alone and compared with `fix-stepping-stone` on the 14 models of the table above (2026-11-20, 8 ranks, pinned). All four are identical to the reference on all 14 models, including all columns of `.stepping` for the two stepping-stone models. All five builds have no compiler warning.
+
+- The three branches do not depend on each other. One point needs care when they are combined: `perf-kernels` adds `PropagateFromLeaf`, and the partial post-order update of `perf-pruning` can use it for leaves. `perf-pruning` alone uses plain `Propagate` there. `perf-combined` has one extra commit that switches to the leaf shortcut. The result is the same with or without it.
+- The sources of `perf-combined` are the same as those of `perf-opt`.
+
+Wall time in seconds of these runs (one run per cell; the `perf-pruning` column was run in a later batch than the others):
+
+| Model | base | `perf-pruning` | `perf-kernels` | `perf-mixture` | `perf-combined` |
+|---|---|---|---|---|---|
+| `catgtr` | 525 | 308 | 250 | 296 | 87 |
+| `catgtr_nni` | 185 | 110 | 78 | 152 | 38 |
+| `ncat10gtr` | 169 | 137 | 54 | 178 | 38 |
+| `lg` | 259 | 108 | 50 | 179 | 51 |
+| `catpoisson` | 194 | 222 | 177 | 157 | 110 |
+| `catpoisson_dc` | 148 | 130 | 116 | 90 | 54 |
+| `ncat10poisson` | 153 | 118 | 96 | 214 | 108 |
+| `stepping_catpoisson` | 155 | 169 | 151 | 155 | 108 |
+| `stepping_catgtr` | 169 | 191 | 188 | 199 | 184 |
+| `mutselc_cat` | 202 | 259 | 198 | 113 | 126 |
+| `mutselc_ncat3` | 45 | 38 | 32 | 44 | 30 |
+| `mutsel_cat` | 55 | 59 | 48 | 47 | 52 |
+| `mutsel_freeomega` | 68 | 51 | 53 | 52 | 45 |
+| `mutsel_ncat3` | 43 | 36 | 29 | 34 | 27 |
+
+These single runs are a rough guide only. Other jobs share the nodes, and the same build varied by up to 45% between batches (see below). Use section 3 of `PERFORMANCE.md` for the speed of the complete work. What the table does show: the gains of the three branches are separate and add up (CAT-GTR: 525 s for the base, 250 to 308 s for each branch alone, 87 s for all three).
+
+Three cells where a branch looked slower than the base were repeated 3 times, base and branch in the same batch:
+
+| Model | Branch | base (s) | branch (s) |
+|---|---|---|---|
+| `catpoisson` | `perf-pruning` | 297, 265, 281 | 230, 229, 234 |
+| `mutselc_cat` | `perf-pruning` | 253, 250, 253 | 241, 243, 242 |
+| `ncat10poisson` | `perf-mixture` | 215, 216, 148 | 213, 213, 150 |
+
+So `perf-pruning` is not slower on these models, and `perf-mixture` makes no difference for the finite Poisson mixture. The slower single cells above were noise.
 
 ## 4. What is not validated
 

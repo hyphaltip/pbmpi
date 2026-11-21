@@ -175,7 +175,7 @@ Two things are **not** done: no sum is reordered, and no multiply-add is fused. 
 
 - The precondition "everything was up to date" is the caller's duty. It holds in `GibbsSPR(int)` because the repetition with `rep == 0` does a full update after the re-rooting [code].
 - The mark array is indexed by `Node::GetIndex()` with a range check that exits (PhyloProcess.cpp:204-207) [code].
-- The comment at PhyloProcess.cpp:652-654 still says that each call "ends with a complete update". It now ends with a partial update. Fix the comment before the pull request [code, rechecked].
+- The comment above `GibbsSPR(int)` said that each call "ends with a complete update", while it now ends with a partial update. The comment is corrected (section 12, item 2) [code, rechecked].
 - The two broadcasts and the reply have the same shape as existing messages. No deadlock path was found [code, inference].
 
 **Measured.** Not measured separately. Cumulative run opt7: 303.6 s (237.4 s with `-mavx2`) [bench].
@@ -251,12 +251,14 @@ Limits: arrays of size 128 with bounds checks; no file is written on abnormal ex
 
 ## 12. Items to fix or decide before a pull request
 
-1. **`-Wreorder` warning (new, 87 warning lines in the HEAD build, 0 in the `master` build).** In `MixtureProfileProcess.h:29` the constructor initializes `profile(0), logprofilecachesize(0)`, but `logprofilecachesize` is declared before `profile` (lines 206 and 212). The behavior is correct. Swap the order in the initializer list. This is a one-line change, but it changes the sources, so the pinned build 312c2bd would no longer correspond exactly to HEAD [code, rechecked].
-2. **Outdated comment** at PhyloProcess.cpp:652-654 (see section 7) [code, rechecked].
-3. **`pb_message_names`** ends with `,BATCH` (PhyloProcess.cpp:1662). The enum has no `BATCH` any more. It is harmless because that index is never counted, but it is a leftover of the reverted batching work [code].
+Items 1, 2, 3 and 6 are fixed (2026-11-20). The four fixes change no behavior: the build has no `-Wreorder` warning any more, and all 14 models give the same chains as before (`validation.md`).
+
+1. **Fixed: `-Wreorder` warning (87 warning lines in the build of 312c2bd, 0 in the `master` build).** In `MixtureProfileProcess.h:29` the constructor initialized `profile(0), logprofilecachesize(0)`, but `logprofilecachesize` is declared before `profile`. The behavior was correct. The initializer list now follows the declaration order. The pinned builds 312c2bd and 4d7ef1e were made before this fix [code, rechecked].
+2. **Fixed: outdated comment** above `GibbsSPR(int)` (see section 7) [code, rechecked].
+3. **Fixed: `pb_message_names`** ended with `,BATCH`, a leftover of the reverted batching work. The enum has no `BATCH`, and that index was never counted. The name is removed [code].
 4. **`GibbsSPR(0)` return value** changed from NaN to 0 (section 4), and it is not in the commit message. Mention it in the pull request.
 5. **`CachedLogGamma` sentinel** `-1.0` (section 9). Consider a separate validity flag.
-6. **`PB_NO_VECTOR_KERNEL`** is not documented in the Makefile. It is described in `build-and-compiler-options.md`; add a Makefile comment.
+6. **Fixed: `PB_NO_VECTOR_KERNEL`** was not documented in the Makefile. A Makefile comment now describes it, in addition to `build-and-compiler-options.md`.
 7. **Non-virtual copies** of virtual function bodies (`PostOrderUpdateConditionalLikelihoods`, `PartialUpdateConditionalLikelihoods`) can drift from `UpdateConditionalLikelihoods` in a subclass (section 1).
 8. **Public scratch fields** `SubMatrix::propstamp` and `propslot` are used by another class. They carry the shared-matrix hazard of section 10 [code, inference].
 9. **Prepare without benefit.** The Matrix SBDP and Finite allocation moves call Prepare even when the model's `LogStatProb` does not read the cache (section 3) [code].
