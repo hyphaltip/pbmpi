@@ -113,14 +113,32 @@ For earlier candidates (commit 51fdf5f and the later-superseded commit 22ccd4d),
 - Chains that do not use `-sis` never read these arrays (`profilefrac` is 1.0). Fixed `master` against unfixed `master`: `catgtr` (20 cycles) and `ncat10gtr` (15 cycles) identical in `.treelist`, `.chain` and `.trace`; `stepping_catpoisson` identical in `.stepping`.
 - Fixed `perf-opt` against fixed `master`: `catgtr`, `ncat10gtr`, `stepping_catpoisson` and `stepping_catgtr` all identical (`.stepping` for the stepping models). The `stepping_catgtr` run is one stepping point, 0 to 1000 sites, on `sim20x1000`.
 
-**Known remaining issue (not caused by the fix, not fixed).** The `logZ` and `effsize` columns of `.stepping` print `-nan` when the first step has a very negative log-likelihood. The unfixed `master` does the same for CAT-Poisson. In the accumulator, the first rescaling is `0 * exp(+large)`. The columns `meanlogp` and `varlogp` are finite. Because both sides print `-nan` in the same columns, an identical `.stepping` file shows that `meanlogp` and `varlogp` agree, but says nothing about `logZ`.
+**The `logZ` and `effsize` columns (fixed in db61cc5).** These two columns of `.stepping` printed `-nan` when the first step had a very negative log-likelihood, in `master` too (also for CAT-Poisson). In the accumulator of `SteppingRun` (`sources/Model.h`), the first rescaling was `0 * exp(+large)`. The fix skips the rescaling while the running sums are still empty. It does not change the chain, and it is not a speed change.
+
+- Stepping CAT-Poisson with and without the fix, on `master` and on `perf-opt`: the `.stepping` files differ only in columns 3 (`logZ`) and 8 (`effsize`), which go from `-nan` to finite values.
+- A model test of the accumulator with 20,000 random inputs: the old logic gave NaN or infinity in 38% of cases; the new logic was always finite, equal to the old wherever the old was finite, and within 1.3e-15 of a reference calculation.
+- Before the fix, both sides printed `-nan` in the same columns, so an identical `.stepping` file showed that `meanlogp` and `varlogp` agreed but said nothing about `logZ`.
+
+### 3.5 Open: stepping-stone CAT-GTR gave a second result in 4 of 52 runs (not reproduced)
+
+The test is `-cat -gtr -sis 1000 2 3 -rnd 1` on `sim20x1000`, 8 ranks, one stepping point. With the same data, seed, rank count and compiler flags, the `meanlogp` column was -41136.2 in 48 runs and -36484.3 in 4 runs.
+
+- The 4 runs were all on 2026-11-19 between 22:01 and 22:15, on nodes r41 and r42: one of `perf-opt` 1077165 and three of db61cc5. Other runs on the same nodes in the same hour gave -41136.2.
+- It is not a build difference: the db61cc5 binary that gave -36484.3 three times gave -41136.2 in 7 of 7 runs the next day. It is not the `logZ` fix either, because both code versions show both values.
+- Attempts to reproduce it on 2026-11-20 all gave -41136.2: 7 repeats of that binary (node r07), 8 runs through `bench.sbatch` (r30), and 8 runs fixed to r41 and r42 (4 of fixed `master`, 4 of `perf-opt`).
+- Fixed `master` (branch `fix-sis-gtr-nan`) gave -41136.2 in all 8 of its runs, so whether `master` can show the second value is not known.
+- No cause was found. Filling the heap with 0x00 or 0xFF, and `MALLOC_PERTURB_`, did not change the result. valgrind memcheck on the first 100 sites reported no uninitialised reads in `pb_mpi`.
+- One suspect, not shown to matter: the master adds up the replies of the slaves in arrival order (`MPI_ANY_SOURCE` in `PhyloProcess::GlobalComputeNodeLikelihood` and similar loops), so a sum can depend on timing at rounding level.
+- Stepping CAT-Poisson and all models without `-sis` have never shown run-to-run variation.
+
+To test again later: repeat the command above many times and compare `chain.stepping`; if a second value appears, add per-cycle output to find the first cycle that differs. Until then, treat a single differing stepping CAT-GTR run as possibly this effect, and repeat it before concluding that a code change altered the chain.
 
 ## 4. What is not validated
 
 Be explicit about these in any pull request:
 
 1. **Different numbers of MPI ranks.** All comparisons use the same rank count for both builds. The chain depends on the rank count (see `pinning-and-cpu-affinity.md`), so a chain from 8 ranks is not expected to equal a chain from 64 ranks, for `master` or for the optimized code. This was not tested by running different rank counts.
-2. **Stepping-stone with CAT-GTR** (`-sis`) is validated only for one stepping point on a 20-taxon, 1000-site alignment (section 3.4). Several stepping points, the 40x5000 alignment and the `-empstepping` option were not tested with CAT-GTR.
+2. **Stepping-stone with CAT-GTR** (`-sis`) is validated only for one stepping point on a 20-taxon, 1000-site alignment (section 3.4), and 4 of 52 runs of that test gave a different result for an unknown reason (section 3.5). Several stepping points, the 40x5000 alignment and the `-empstepping` option were not tested with CAT-GTR.
 3. **Models and options outside the table.** The 14 configurations do not use, for example, a fixed topology (`-T`, `-Tbl`), a non-default `-dgam`, or `-catfix`. Restarting a stopped chain from its `.param` file (`pb_mpi <name>`) is covered only by the single production-size check in section 3.2. Any option not named in the table should be treated as untested.
 4. **Large or long runs.** The longest identity comparison is 20 cycles of CAT-GTR on 40x5000 (about 8 saved cycles on the 38x59,994 data set). Rounding differences that appear only after many thousands of cycles would not be seen. The arithmetic is argued to be unchanged in `code-optimizations.md`, so none is expected.
 5. **Other compilers, other CPUs.** All tests used GCC 8.5.0 and Open MPI 4.1.2 on AMD EPYC 7713 (Zen 3). A different compiler or CPU can change floating-point results through instruction contraction or different library code. Re-run the regression after any such change.
