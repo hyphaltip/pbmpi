@@ -12,7 +12,17 @@ A=$1; B=$2; rc=0; n=0
 for ext in treelist chain stepping; do
   [ -s "$A/chain.$ext" ] || [ -s "$B/chain.$ext" ] || continue
   n=$((n+1))
-  if cmp -s "$A/chain.$ext" "$B/chain.$ext"; then echo "$ext: identical"; else echo "$ext: DIFFER"; rc=1; fi
+  if cmp -s "$A/chain.$ext" "$B/chain.$ext"; then echo "$ext: identical"
+  elif [ $ext = stepping ] && paste -d '\n' "$A/chain.$ext" "$B/chain.$ext" | awk -F'\t' '
+      # allowed difference: a logZ or effsize column (3, 8; 9 and 14 with -maxvar) that is nan on one side only.
+      # master prints nan there when the first step is very negative; fixed in perf-opt (docs/bug-fixes.md).
+      NR%2 {n=split($0,a,FS); next}
+      { if (NF!=n) bad=1
+        for (i=1;i<=NF;i++) if (($i "") != (a[i] "")) {   # as strings: awk reads "nan" as a number
+          if ((i==3||i==8||i==9||i==14) && ((a[i]~/nan/)!=($i~/nan/))) c++; else bad=1 } }
+      END { if (bad || NR%2 || c==0) exit 1; exit 0 }'; then
+    echo "$ext: identical apart from logZ/effsize, which are nan on one side (see docs/bug-fixes.md)"
+  else echo "$ext: DIFFER"; rc=1; fi
 done
 if [ -s "$A/chain.trace" ] || [ -s "$B/chain.trace" ]; then
   n=$((n+1))

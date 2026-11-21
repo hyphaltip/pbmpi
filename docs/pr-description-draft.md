@@ -10,9 +10,9 @@ Speed up the likelihood code and mixture moves (4x on CAT-GTR) without changing 
 
 ## Summary
 
-This pull request makes `pb_mpi` faster. For the same data, model, `-rnd` seed and number of MPI ranks, it produces the **same chain as the current `master`**: the same `.treelist`, `.chain` and `.trace` (except the timing columns), byte for byte, on 13 model configurations.
+This pull request makes `pb_mpi` faster. For the same data, model, `-rnd` seed and number of MPI ranks, it produces the **same chain as the current `master`**: the same `.treelist`, `.chain` and `.trace` (except the timing columns), byte for byte, on 12 model configurations. Two stepping-stone configurations give the same `.stepping` file apart from two columns that `master` prints as `-nan`.
 
-- Wall time against `master` on 8 unpinned ranks (one run each): 4.4x for CAT-GTR (40 taxa x 5000 sites), up to 5.1x for LG, 2.0x to 2.6x for CAT-Poisson, 1.2x to 2.1x for the codon models.
+- Wall time against `master` on 8 pinned ranks (two runs each): 4.2x to 5.0x for CAT-GTR (40 taxa x 5000 sites), up to 5.5x for LG, 2.1x to 3.4x for CAT-Poisson, 1.1x to 2.2x for the codon models.
 - At production size (38 taxa x 59,994 sites, CAT-GTR, 64 pinned ranks): 16.35 s per cycle against 71.28 s (4.36x).
 - Running one rank per physical core ("pinning") gives a further 1.5x on shared-core allocations. It is a run-time setting and needs no code change.
 
@@ -35,7 +35,7 @@ Each change keeps the same arithmetic in the same order and the same sequence of
 
 ## How it was tested
 
-- `scripts/bench/regression.sh`: 14 model configurations against `master`, same seed and rank count. 13 give identical chains. The 14th (`-cat -gtr -sis`) cannot be compared against the current `master`, because `master` aborts with NaN. It is compared after the small fix described below.
+- `scripts/bench/regression.sh`: 14 model configurations against `master`, same seed and rank count, run twice. The 12 without `-sis` give identical chains. Stepping CAT-Poisson is identical apart from the two corrected columns. Stepping CAT-GTR cannot be compared against the current `master`, because `master` aborts with NaN; it is compared against `master` with the small fix described below.
 - `scripts/bench/readpb_regression.sbatch`: `readpb_mpi` analyses against `master` (30 analyses, all identical for an earlier candidate; to be re-run on the final commit, see below).
 - A production-size resumed chain: first 8 cycles identical.
 - Compiler flags: `-mavx2` does not change the chain of `master` or of the optimized code.
@@ -43,9 +43,10 @@ Each change keeps the same arithmetic in the same order and the same sequence of
 ## Known gaps (please read)
 
 - Validated only with the same number of ranks for both builds, on GCC 8.5.0, Open MPI 4.1.2, AMD EPYC 7713.
-- Stepping-stone with CAT-GTR: `master` aborts. The cause is an uninitialized array (see `docs/validation.md`, section 3.4). The fix is an independent 8-line change in `sources/GTRProfileProcess.cpp`. **Submit it as a separate small pull request to `master` first.** With the fix, the optimized code gives the same `.stepping` file as the fixed `master` for one stepping point on a 20x1000 alignment. The `logZ` and `effsize` columns print `-nan` for large steps, in `master` too (not fixed).
-- One model, `-mutsel -ncat 3`, was slower than `master` in a single short unpinned run (0.83x). Not yet repeated.
-- Most timings are single unpinned runs with 6% to 21% run-to-run spread. See `docs/PERFORMANCE.md`, section 4.
+- Stepping-stone with CAT-GTR: `master` aborts. The cause is an uninitialized array (see `docs/validation.md`, section 3.4). The fix is an independent 8-line change in `sources/GTRProfileProcess.cpp`. With the fix, the optimized code gives the same `.stepping` file as the fixed `master` for one stepping point on a 20x1000 alignment. The `logZ` and `effsize` columns printed `-nan` for large steps, in `master` too; a second fix (16 lines in `sources/Model.h`) corrects this. **Submit both fixes as a separate small pull request to `master` first** (branches `fix-sis-gtr-nan` and `fix-stepping-logz-nan`; see `docs/bug-fixes.md`).
+- Stepping-stone with CAT-GTR gave a second, different result in 4 of 52 runs with identical inputs. It was not reproduced in 23 later runs and has no known cause (`docs/validation.md`, section 3.5). Fixed `master` gave the usual result in all 8 of its runs.
+- The codon model `-mutsel -ncat 3` gains little (about 1.15x in 3 pinned runs of 30 cycles).
+- The model timings are two pinned runs per cell, and one cell can differ by up to about 30% between the runs. See `docs/PERFORMANCE.md`, section 4.
 - The vector kernel uses GCC and clang vector extensions. Other compilers use the plain loops. Not tested on ARM or with clang.
 
 ## For reviewers
@@ -81,7 +82,7 @@ Details in `docs/PERFORMANCE.md`, section 5.
 ## Files in this pull request
 
 - Source changes under `sources/` (the optimizations).
-- Documentation under `docs/` (five files listed in `README.md`).
+- Documentation under `docs/` (six files listed in `README.md`).
 - Scripts under `scripts/bench/` and `scripts/install_build.sh` (Slurm scripts written for the UCR HPCC; they need small edits for other clusters).
 
 Left out of the pull request (project-internal): `CLAUDE.md` and the exploratory planning notes in `docs/` (`wasm-volunteer-chains-plan.md`, `m0-native-shim-experiment.md`, `kubernetes-design.md`, `parallelization-strategies.md`, `simd-analysis.md`).

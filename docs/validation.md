@@ -41,34 +41,36 @@ PREFIX=<name> scripts/bench/regression.sh check                     # after the 
 
 `scripts/bench/readpb_regression.sbatch <new-ref> master [model]` makes a short chain with the old build, then runs each `readpb_mpi` analysis with both builds on copies of that chain and compares every output file. `readpb_mpi` has no seed option and seeds from the clock. The script therefore preloads a small shim (`fixusec.so`) that fixes the microsecond field of `gettimeofday`, so that stochastic analyses can be compared.
 
-## 3. Results for commit 312c2bd (the tip of the optimized code)
+## 3. Results for `perf-opt` at 4d7ef1e
 
-Test conditions: 8 MPI ranks, unpinned, default compiler flags (`-Wall -O3 -std=c++11`), simulated amino-acid alignment 40 taxa x 5000 sites (`bench/data/sim40x5000.phy`), or 20 codon taxa x 500 codons for the `mutsel` models, `-rnd 1`. Reference: `master` at 3c77656. One run per cell.
+The speed changes end at commit 312c2bd. The later commits add scripts, documentation and the two corrections of `bug-fixes.md`. Sections 3.1 to 3.3 were measured on 312c2bd or earlier and name their commit.
 
-| Model flags | Cycles | Chain identical to master | Wall time master (s) | Wall time optimized (s) | Ratio |
+Test conditions: 8 MPI ranks, each pinned to its own physical core (`--hint=nomultithread`, `mpirun --bind-to core --map-by core`), default compiler flags (`-Wall -O3 -std=c++11`, no AVX2), simulated alignments (40 taxa x 5000 amino-acid sites; 20 codon taxa x 500 codons for the `mutsel` models), `-rnd 1`. Reference: `master` at 3c77656. Two complete passes on 2026-11-20 (folders `bench/pin1_*` and `bench/pin2_*`), at most 6 jobs at a time on a node.
+
+| Model flags | Cycles | Chain identical | master (s), run 1 / run 2 | optimized (s), run 1 / run 2 | Ratio, run 1 / run 2 |
 |---|---|---|---|---|---|
-| `-cat -gtr` | 20 | yes | 739.2 | 167.8 | 4.40x |
-| `-cat -gtr -spr 2 -nni 2` | 10 | yes | 242.1 | 62.9 | 3.85x |
-| `-cat -poisson` | 60 | yes | 361.6 | 174.6 | 2.07x |
-| `-cat -poisson -dc` | 30 | yes | 179.4 | 69.5 | 2.58x |
-| `-ncat 10 -gtr` | 15 | yes | 359.5 | 72.3 | 4.96x |
-| `-ncat 10 -poisson` | 60 | yes | 242.7 | 124.3 | 1.95x |
-| `-ncat 1 -lg` | 15 | yes | 319.6 | 63.0 | 5.07x |
-| `-cat -poisson -sis 1000 2 3` | 1000 | yes (`.stepping`) | 235.9 | 143.1 | 1.64x |
-| `-mutsel -cat` | 8 | yes | 81.8 | 63.5 | 1.28x |
-| `-mutsel -ncat 3` | 8 | yes | 56.1 | 67.2 | **0.83x (slower)** |
-| `-mutsel -cat -freeomega` | 8 | yes | 72.7 | 62.1 | 1.17x |
-| `-mutselc -cat` | 8 | yes | 309.1 | 147.0 | 2.10x |
-| `-mutselc -ncat 3` | 8 | yes | 56.8 | 41.6 | 1.36x |
-| `-cat -gtr -sis 1000 2 3` (20 taxa x 1000 sites; one stepping point) | 1000 | **only after the fix of section 3.4** | master aborts | see section 3.4 | n/a |
-
-I re-ran `compare_runs.sh` on these stored runs while writing this note. All 13 pairs that could be compared at that time report identical files. The 14th configuration is covered in section 3.4.
+| `-cat -gtr` | 20 | yes | 515.7 / 549.8 | 122.4 / 110.4 | 4.21x / 4.98x |
+| `-cat -gtr -spr 2 -nni 2` | 10 | yes | 144.3 / 188.6 | 40.7 / 47.7 | 3.55x / 3.95x |
+| `-ncat 10 -gtr` | 15 | yes | 240.1 / 256.9 | 47.8 / 52.8 | 5.02x / 4.87x |
+| `-ncat 1 -lg` | 15 | yes | 245.9 / 228.2 | 46.5 / 41.3 | 5.29x / 5.53x |
+| `-cat -poisson` | 60 | yes | 287.4 / 250.0 | 124.9 / 117.5 | 2.30x / 2.13x |
+| `-cat -poisson -dc` | 30 | yes | 156.6 / 132.2 | 45.6 / 52.9 | 3.43x / 2.50x |
+| `-ncat 10 -poisson` | 60 | yes | 219.0 / 289.4 | 111.1 / 106.2 | 1.97x / 2.73x |
+| `-cat -poisson -sis 1000 2 3` | 1000 | yes, apart from the two corrected columns | 157.0 / 161.2 | 89.2 / 101.5 | 1.76x / 1.59x |
+| `-cat -gtr -sis 1000 2 3` (20 taxa x 1000 sites; reference is fixed `master`) | 1000 | yes, apart from the two corrected columns | 164.9 / 187.3 | 160.7 / 169.8 | 1.03x / 1.10x |
+| `-mutselc -cat` | 8 | yes | 219.7 / 203.4 | 123.4 / 93.6 | 1.78x / 2.17x |
+| `-mutselc -ncat 3` | 8 | yes | 44.2 / 31.6 | 35.4 / 24.6 | 1.25x / 1.28x |
+| `-mutsel -cat` | 8 | yes | 59.9 / 55.1 | 49.8 / 49.1 | 1.20x / 1.12x |
+| `-mutsel -cat -freeomega` | 8 | yes | 61.5 / 50.2 | 48.1 / 38.1 | 1.28x / 1.32x |
+| `-mutsel -ncat 3` | 8 | yes | 44.3 / 32.2 | 37.3 / 24.9 | 1.19x / 1.29x |
 
 Remarks:
 
-- **Stepping-stone with CAT-GTR.** `master` itself aborts with `in Plink::SetRelativeTime: setting to nan` (on the 40x5000 alignment and on a 20x1000 alignment). This was a bug in `master`, not in the optimized code. It is fixed on branch `fix-sis-gtr-nan` and in `perf-opt` (commit 9f2a6fc). Section 3.4 gives the cause and the validation. The 312c2bd rows in this table were measured before the fix.
-- **`-mutsel -ncat 3`.** One run was slower than `master` (56.1 s against 67.2 s). The runs are short (8 cycles), unpinned and not repeated. Run-to-run spread at this length is 10% or more. It is not known whether this model is truly slower. Repeat it before drawing a conclusion.
-- The wall-time ratios are single unpinned runs. Use `PERFORMANCE.md` for timing, not this table.
+- **All 12 configurations without `-sis`** give identical `.treelist`, `.chain` and `.trace` (apart from the timing columns) in both passes.
+- **The two stepping-stone configurations** give a `.stepping` file that is identical to the reference in every column except `logZ` and `effsize`. The reference prints `-nan` there, and the optimized branch prints finite values because of the correction db61cc5 (section 3.4). `compare_runs.sh` reports this case separately.
+- **Stepping-stone with CAT-GTR.** `master` itself aborts with `in Plink::SetRelativeTime: setting to nan`. The reference for this row is therefore `master` plus the 8-line correction 9f2a6fc (branch `fix-sis-gtr-nan`). This test is almost entirely per-site stepping code, which the optimizations do not touch, so there is no gain. See also section 3.5.
+- **`-mutsel -ncat 3`** is not slower than `master`. An earlier single unpinned run suggested 0.83x; it was not confirmed here, nor in 3 pinned runs of 30 cycles (`master` 147, 171, 154 s; 312c2bd 134, 137, 103 s).
+- Timings still vary between the two passes by up to about 30% for one cell, because other jobs share the node. The ratios are good to a few tenths.
 
 ### 3.1 `readpb_mpi`
 

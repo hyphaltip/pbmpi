@@ -12,4 +12,5 @@ This branch contains speed optimizations that follow exactly the same Markov cha
 - `docs/code-optimizations.md`: each code change and why the results are unchanged
 - `docs/build-and-compiler-options.md`: compiler flags (`make ARCHFLAGS=-mavx2`) and their effect
 - `docs/pinning-and-cpu-affinity.md`: run one MPI rank per physical core (about 1.5x faster)
+- `docs/bug-fixes.md`: two corrections of errors in the original code (stepping-stone runs only)
 - `docs/validation.md`: how identity with the original is tested, and what is not tested

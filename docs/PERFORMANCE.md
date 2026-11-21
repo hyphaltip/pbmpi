@@ -8,16 +8,17 @@ This is the entry point for the performance documentation of the `perf-opt` bran
 | `code-optimizations.md` | each code change: what, why, why the result is unchanged, risks |
 | `build-and-compiler-options.md` | compiler flags, what they do, what was measured |
 | `pinning-and-cpu-affinity.md` | why one rank per physical core matters; how to do it |
+| `bug-fixes.md` | two corrections of errors in `master` (stepping-stone only) |
 | `validation.md` | the identical-results rule, tests, results, gaps |
 
 ## 1. Summary
 
-- The optimized code (`perf-opt`, commit 312c2bd and the later script-only commits) follows **exactly the same Markov chain as `master`** for the same data, model, seed and number of ranks. Tested on 13 model configurations. `validation.md` gives the evidence and the gaps.
-- Speed-up in wall time, measured against `master` in the same batch of jobs (8 ranks, unpinned, default flags, one run each): **4.4x** for CAT-GTR, up to **5.1x** for LG, **2.0x to 2.6x** for CAT-Poisson, **1.2x to 2.1x** for codon models. One configuration (`-mutsel -ncat 3`) was **slower** (0.83x) in a single short run that has not been repeated.
+- The optimized code (`perf-opt`; the speed changes end at commit 312c2bd, and the later commits are scripts, documentation and the two corrections in `bug-fixes.md`) follows **exactly the same Markov chain as `master`** for the same data, model, seed and number of ranks. Tested on 14 model configurations (for the two stepping-stone ones, apart from two output columns that `master` prints as `-nan`; see `bug-fixes.md`). `validation.md` gives the evidence and the gaps.
+- Speed-up in wall time, measured against `master` in the same batch of jobs (8 ranks, pinned, default flags, two runs each): **4.2x to 5.0x** for CAT-GTR, up to **5.5x** for LG, **2.1x to 3.4x** for CAT-Poisson, **1.1x to 2.2x** for codon models. No configuration is slower than `master`.
 - Speed-up at production size: 38 taxa x 59,994 amino-acid sites, CAT-GTR, 64 ranks, pinned: **16.35 s per cycle** against **71.28 s** for `master` (4.36x).
 - **Pinning each rank to its own physical core is worth about 1.5x by itself**, more than any compiler flag tested. It changes no result. See `pinning-and-cpu-affinity.md`.
 - The optimizations do not change the arithmetic. They remove repeated work, avoid allocation, cache values that were recomputed, and let the compiler use vector registers.
-- All numbers come from one cluster (AMD EPYC 7713), one compiler (GCC 8.5.0) and one MPI (Open MPI 4.1.2). Most timings are single runs with 6% to 21% run-to-run spread.
+- All numbers come from one cluster (AMD EPYC 7713), one compiler (GCC 8.5.0) and one MPI (Open MPI 4.1.2). The model table has two pinned runs per cell; the history and scaling tables are single runs.
 
 ## 2. What was done, in one paragraph per area
 
@@ -32,31 +33,33 @@ This is the entry point for the performance documentation of the `perf-opt` bran
 
 ## 3. Results
 
-### 3.1 All models, 312c2bd against `master` (same batch)
+### 3.1 All models, `perf-opt` (4d7ef1e) against `master`, pinned
 
-Conditions: 8 ranks, unpinned, default flags, simulated alignments (40 taxa x 5000 amino-acid sites; 20 codon taxa x 500 codons for `mutsel`), `-rnd 1`. One run per cell. Wall time includes MPI start-up and program set-up.
+Conditions: 8 MPI ranks, each pinned to its own physical core (`--hint=nomultithread`, `mpirun --bind-to core --map-by core`), default compiler flags (`-Wall -O3 -std=c++11`, no AVX2), simulated alignments (40 taxa x 5000 amino-acid sites; 20 codon taxa x 500 codons for the `mutsel` models), `-rnd 1`. Reference: `master` at 3c77656. Two complete passes on 2026-11-20 (folders `bench/pin1_*` and `bench/pin2_*`), at most 6 jobs at a time on a node. Wall time includes MPI start-up and program set-up.
 
-| Model flags | Cycles | master (s) | optimized (s) | Ratio | Chain identical |
+| Model flags | Cycles | Chain identical | master (s), run 1 / run 2 | optimized (s), run 1 / run 2 | Ratio, run 1 / run 2 |
 |---|---|---|---|---|---|
-| `-cat -gtr` | 20 | 739.2 | 167.8 | 4.40x | yes |
-| `-cat -gtr -spr 2 -nni 2` | 10 | 242.1 | 62.9 | 3.85x | yes |
-| `-ncat 10 -gtr` | 15 | 359.5 | 72.3 | 4.96x | yes |
-| `-ncat 1 -lg` | 15 | 319.6 | 63.0 | 5.07x | yes |
-| `-cat -poisson` | 60 | 361.6 | 174.6 | 2.07x | yes |
-| `-cat -poisson -dc` | 30 | 179.4 | 69.5 | 2.58x | yes |
-| `-ncat 10 -poisson` | 60 | 242.7 | 124.3 | 1.95x | yes |
-| `-cat -poisson -sis 1000 2 3` | 1000 | 235.9 | 143.1 | 1.64x | yes |
-| `-mutselc -cat` | 8 | 309.1 | 147.0 | 2.10x | yes |
-| `-mutselc -ncat 3` | 8 | 56.8 | 41.6 | 1.36x | yes |
-| `-mutsel -cat` | 8 | 81.8 | 63.5 | 1.28x | yes |
-| `-mutsel -cat -freeomega` | 8 | 72.7 | 62.1 | 1.17x | yes |
-| `-mutsel -ncat 3` | 8 | 56.1 | 67.2 | **0.83x** | yes |
+| `-cat -gtr` | 20 | yes | 515.7 / 549.8 | 122.4 / 110.4 | 4.21x / 4.98x |
+| `-cat -gtr -spr 2 -nni 2` | 10 | yes | 144.3 / 188.6 | 40.7 / 47.7 | 3.55x / 3.95x |
+| `-ncat 10 -gtr` | 15 | yes | 240.1 / 256.9 | 47.8 / 52.8 | 5.02x / 4.87x |
+| `-ncat 1 -lg` | 15 | yes | 245.9 / 228.2 | 46.5 / 41.3 | 5.29x / 5.53x |
+| `-cat -poisson` | 60 | yes | 287.4 / 250.0 | 124.9 / 117.5 | 2.30x / 2.13x |
+| `-cat -poisson -dc` | 30 | yes | 156.6 / 132.2 | 45.6 / 52.9 | 3.43x / 2.50x |
+| `-ncat 10 -poisson` | 60 | yes | 219.0 / 289.4 | 111.1 / 106.2 | 1.97x / 2.73x |
+| `-cat -poisson -sis 1000 2 3` | 1000 | yes, apart from the two corrected columns | 157.0 / 161.2 | 89.2 / 101.5 | 1.76x / 1.59x |
+| `-cat -gtr -sis 1000 2 3` (20 taxa x 1000 sites; reference is fixed `master`) | 1000 | yes, apart from the two corrected columns | 164.9 / 187.3 | 160.7 / 169.8 | 1.03x / 1.10x |
+| `-mutselc -cat` | 8 | yes | 219.7 / 203.4 | 123.4 / 93.6 | 1.78x / 2.17x |
+| `-mutselc -ncat 3` | 8 | yes | 44.2 / 31.6 | 35.4 / 24.6 | 1.25x / 1.28x |
+| `-mutsel -cat` | 8 | yes | 59.9 / 55.1 | 49.8 / 49.1 | 1.20x / 1.12x |
+| `-mutsel -cat -freeomega` | 8 | yes | 61.5 / 50.2 | 48.1 / 38.1 | 1.28x / 1.32x |
+| `-mutsel -ncat 3` | 8 | yes | 44.3 / 32.2 | 37.3 / 24.9 | 1.19x / 1.29x |
 
 Read the table with care:
 
-- `master` timings vary between batches. For CAT-GTR on this alignment, `master` took 739 s here, and 954 s and 900 s in two earlier runs. The ratio in the first row is therefore uncertain by tens of percent.
-- The speed-up is largest for CAT-GTR and LG and smallest for the codon (`mutsel`) models. The likely reason is that the optimized code paths (the amino-acid pruning kernel and the mixture moves) are a smaller share of the time in the codon models. The codon models were not profiled, so this is an inference.
-- The `-mutsel -ncat 3` result is a single short unpinned run and has not been repeated. Do not conclude that the model is slower until it is.
+- Two runs per cell. Timings of one cell differ by up to about 30% between the two passes, because other jobs share the node.
+- The speed-up is largest for CAT-GTR, the finite GTR mixture and LG (4x to 5.5x), 2x to 3.4x for the Poisson models, and 1.1x to 2.2x for the codon (`mutsel`) models. The likely reason is that the optimized code paths (the amino-acid pruning kernel and the mixture moves) are a smaller share of the time in the codon models. The codon models were not profiled, so this is an inference.
+- Stepping-stone with CAT-GTR shows no gain: the test is one stepping point and is almost entirely per-site stepping code, which was not optimized.
+- An earlier unpinned table (8 logical CPUs on 4 cores) gave similar ratios with wall times about 1.4x longer for both builds.
 
 ### 3.2 Production-size data set, pinned
 
@@ -109,26 +112,27 @@ The master spends about 91% of its time in MPI polling (from an earlier profile)
 
 ### 3.5 Scaling with the number of ranks
 
-Data: 38 taxa x 59,994 sites, CAT-GTR, pinned. Each row is one run of 20 cycles, resumed from the same saved state. All rows except the last used the **earlier build 31a9b87**. Speed-up and efficiency are relative to 16 ranks. One rank is the master and does little work.
+Data: 38 taxa x 59,994 sites, CAT-GTR, pinned, AVX2 build of 4d7ef1e (`builds/4d7ef1e-avx2`). Each row is one run of 20 cycles, resumed from the same saved state (2026-11-20). Speed-up and efficiency are relative to 16 ranks. One rank is the master and does little work. The last column is the earlier measurement with build 31a9b87, which lacks the kernel of 312c2bd.
 
-| Ranks | Seconds per cycle | Speed-up vs 16 | Efficiency | Core-seconds per cycle |
-|---|---|---|---|---|
-| 16 | 53.96 | 1.00x | 100% | 863 |
-| 24 | 38.15 | 1.41x | 94% | 916 |
-| 32 | 32.92 | 1.64x | 82% | 1053 |
-| 48 | 25.35 | 2.13x | 71% | 1217 |
-| 64 | 20.75 | 2.60x | 65% | 1328 |
-| 96 | 14.83 | 3.64x | 61% | 1424 |
-| 128 | 14.15 | 3.81x | 48% | 1811 |
-| 64 (312c2bd) | 16.35 | n/a | n/a | 1046 |
+| Ranks | Seconds per cycle | Speed-up vs 16 | Efficiency | Core-seconds per cycle | Earlier build 31a9b87 (s per cycle) |
+|---|---|---|---|---|---|
+| 16 | 41.19 | 1.00x | 100% | 659 | 53.96 |
+| 24 | 29.17 | 1.41x | 94% | 700 | 38.15 |
+| 32 | 24.28 | 1.70x | 85% | 777 | 32.92 |
+| 48 | 20.14 | 2.05x | 68% | 967 | 25.35 |
+| 64 | 18.01 | 2.29x | 57% | 1153 | 20.75 |
+| 96 | not re-measured | | | | 14.83 |
+| 128 | not re-measured | | | | 14.15 |
 
 What this means:
 
-- Going from 96 to 128 ranks adds 33% more cores and reduces the time per cycle by 5%.
-- A cycle costs about 1.7x more core time at 128 ranks than at 32 ranks.
-- Fewer ranks is the better choice for total throughput. More ranks (up to about 64 to 96) is the better choice for the wall time of one chain.
-- The scaling table was **not repeated with the current build**, except at 64 ranks. The kernel work moves time from computation to communication, so the scaling curve of 312c2bd is probably different. Re-measure before choosing a rank count for a new project.
-- Each row is a single run.
+- The current build is 1.15x to 1.36x faster than 31a9b87 at every rank count measured, and the gain is largest at low rank counts.
+- Efficiency falls faster than before: 57% at 64 ranks against 65% with the earlier build. The kernel work removed computation, and the communication and waiting time did not shrink with it.
+- A cycle costs about 1.75x more core time at 64 ranks than at 16 ranks.
+- Fewer ranks is the better choice for total throughput. More ranks is the better choice for the wall time of one chain.
+- 96 and 128 ranks were not re-measured, because they did not fit under the group CPU limit while production chains were running. With the earlier build, going from 96 to 128 ranks reduced the time per cycle by only 5%.
+- Each row is a single run, and the rows ran on different nodes (16 to 48 ranks on r07, 64 ranks on r10). An earlier 64-rank run of 312c2bd on r42 gave 16.35 s per cycle, so node-to-node differences of about 10% are present.
+- The 20 cycles of each run have the same `.trace` (apart from the timing columns) as the run of the earlier build at the same rank count.
 
 ### 3.6 What did not help (not merged)
 
@@ -142,7 +146,7 @@ What this means:
 ## 4. Reliability of the numbers
 
 - **Run-to-run spread.** Identical builds on identical settings differ by 6% to 21% (for example 954 s and 900 s for `master`; 288 s and 262 s for one optimized build). Single-run differences below that range are not evidence.
-- **Pinned and unpinned runs are not comparable.** Unpinned 8-rank runs use 4 physical cores and are about 1.5x slower. Most of the early history in section 3.3 and the table in section 3.1 are unpinned. Use them to see the size of the effect, not to rank small variants.
+- **Pinned and unpinned runs are not comparable.** Unpinned 8-rank runs use 4 physical cores and are about 1.5x slower. The early history in section 3.3 is unpinned; the tables in sections 3.1, 3.2 and 3.5 are pinned. Use the unpinned numbers to see the size of the effect, not to rank small variants.
 - **One data set family.** The timing data come from simulated alignments of 40 taxa x 5000 sites, one real data set of 38 taxa x 59,994 sites, and short codon runs. Other shapes (many taxa, few sites, very large alignments) were not measured.
 - **Ratios against `master` depend on `master` timings that vary** from batch to batch.
 - **Not measured:** peak memory (the optimized code adds small per-matrix caches and a scratch buffer, and stores each conditional-likelihood vector in one block; the change in memory was not measured), start-up cost, and behavior with a different MPI library.
@@ -177,8 +181,8 @@ sbatch -n <ranks> --mem <mem> scripts/bench/scaling.sbatch <build dir> <id> <ncy
 
 ## 6. Open items
 
-1. Re-measure the rank-scaling table with the current build.
-2. Repeat `-mutsel -ncat 3` (pinned, at least 3 runs) to find out whether it is slower than `master`.
+1. Re-measure the rank-scaling table at 96 and 128 ranks with the current build (16 to 64 ranks are done).
+2. (Done: `-mutsel -ncat 3` is not slower than `master`, section 3.1.)
 3. Pinned test of the compiler flags in `build-and-compiler-options.md`.
 4. `pb_mpi -cat -gtr -sis` aborted with a NaN in `master` itself. This is fixed (uninitialized empirical-prior arrays of the relative rates; see `validation.md`, section 3.4). The `logZ` and `effsize` columns of `.stepping` printed `-nan` for large steps, in `master` as well; this separate numerical problem is fixed in db61cc5 (`validation.md`, section 3.4). One open item: stepping-stone CAT-GTR gave a second result in 4 of 52 otherwise identical runs, not reproduced since (`validation.md`, section 3.5).
 5. Remaining hot spots: `Multiply`, QR and diagonalization, `LogStatProb`, and idle time waiting for the master.

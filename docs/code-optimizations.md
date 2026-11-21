@@ -1,6 +1,6 @@
 # Code optimizations: what changed and why the results are unchanged
 
-This note describes every code change on `perf-opt` that affects speed, in the order of the commits. Compared are `master` (3c77656) and `perf-opt` (f88fb3b, with the same sources as 312c2bd).
+This note describes every code change on `perf-opt` that affects speed, in the order of the commits. Compared are `master` (3c77656) and `perf-opt` at 312c2bd, the last commit that changes speed. The later commits are scripts, documentation and two corrections of errors in `master` (9f2a6fc and db61cc5, see `bug-fixes.md`).
 
 How to read the evidence tags:
 
@@ -247,7 +247,7 @@ Limits: arrays of size 128 with bounds checks; no file is written on abnormal ex
 
 - **182d90b** (batching of branch-length messages) was reverted by 7683baa. Chains were identical, but there was no speed-up at 8 and 64 ranks. The code is on branch `mpi-batching`. The net change in `perf-opt` is none [code].
 - **5941ab9** (branch `hoist-nstate`) is not merged. See `PERFORMANCE.md`, section 3.6.
-- Script and documentation commits are not described here: 515579a, 96a4fad, 288cc6e, fd3da8a, 38aa626, 377973f, 50612b8, 51fdf5f, 31a9b87, f88fb3b. Commit f8cca16 is mostly scripts but also adds default member initializers for the unfold flags in `PhyloProcess.h`.
+- Script and documentation commits are not described here: 515579a, 96a4fad, 288cc6e, fd3da8a, 38aa626, 377973f, 50612b8, 51fdf5f, 31a9b87, f88fb3b, and the documentation commits after it. The corrections 9f2a6fc and db61cc5 are described in `bug-fixes.md`. Commit f8cca16 is mostly scripts but also adds default member initializers for the unfold flags in `PhyloProcess.h`.
 
 ## 12. Items to fix or decide before a pull request
 
@@ -260,7 +260,7 @@ Limits: arrays of size 128 with bounds checks; no file is written on abnormal ex
 7. **Non-virtual copies** of virtual function bodies (`PostOrderUpdateConditionalLikelihoods`, `PartialUpdateConditionalLikelihoods`) can drift from `UpdateConditionalLikelihoods` in a subclass (section 1).
 8. **Public scratch fields** `SubMatrix::propstamp` and `propslot` are used by another class. They carry the shared-matrix hazard of section 10 [code, inference].
 9. **Prepare without benefit.** The Matrix SBDP and Finite allocation moves call Prepare even when the model's `LogStatProb` does not read the cache (section 3) [code].
-10. **`-mutsel -ncat 3` was slower** than `master` in one unrepeated run (56.1 s against 67.2 s). The cause was not found and the run conditions were not checked [bench]. Repeat it pinned (see `PERFORMANCE.md`, section 6). Section 10 lists a possible cause: per-site matrices get no cache hits and pay bookkeeping. This is a guess [inference].
+10. **`-mutsel -ncat 3` is not slower.** One unrepeated, unpinned run showed 56.1 s for `master` against 67.2 s. Repeated pinned with 30 cycles and 3 runs each, `master` took 147, 171 and 154 s and 312c2bd took 134, 137 and 103 s, with identical chains [bench]. The gain is small for this model. Section 10 lists a possible cause: per-site matrices get no cache hits and pay bookkeeping. This is a guess [inference].
 11. **Formatting:** mixed tabs and spaces at RASCATFiniteGammaPhyloProcess.h:306-312 [code].
 12. No leftover debug output was found in the diff [code].
 
